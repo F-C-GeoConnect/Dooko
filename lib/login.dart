@@ -1,5 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:untitled1/main.dart';
 import 'package:untitled1/sign_in.dart';
 
@@ -25,28 +25,39 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showForgotPasswordDialog() {
+    final supabase = Supabase.instance.client;
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Reset Password'),
-          content:
-              const Text('Enter your email to receive password reset instructions.'),
+          content: const Text(
+              'Enter your email to receive password reset instructions.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 if (_emailController.text.isNotEmpty) {
-                  FirebaseAuth.instance
-                      .sendPasswordResetEmail(email: _emailController.text.trim());
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Password reset link sent to your email.')),
-                  );
+                  try {
+                    await supabase.auth
+                        .resetPasswordForEmail(_emailController.text.trim());
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Password reset link sent to your email.')),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                     Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content: Text("Failed to send reset link: $e"), backgroundColor: Colors.red),
+                    );
+                  }
                 }
               },
               child: const Text('Send'),
@@ -75,7 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      final supabase = Supabase.instance.client;
+      await supabase.auth.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
@@ -88,22 +100,12 @@ class _LoginScreenState extends State<LoginScreen> {
         context,
         MaterialPageRoute(builder: (context) => const MainPage()),
       );
-    } on FirebaseAuthException catch (e) {
+    } on AuthException catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Pop loading indicator
 
-      String message;
-      if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
-      } else if (e.code == 'wrong-password') {
-        message = 'Wrong password provided.';
-      } else if (e.code == 'invalid-email') {
-        message = 'The email address is not valid.';
-      } else {
-        message = 'Login failed. Please try again.';
-      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.red),
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
       );
     }
   }
