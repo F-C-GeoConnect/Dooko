@@ -1,6 +1,6 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:untitled1/login.dart';
 import 'package:untitled1/main.dart';
 
@@ -42,39 +42,42 @@ class _SignUpScreenState extends State<SignUpScreen> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      final supabase = Supabase.instance.client;
+      final response = await supabase.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
+        data: {
+          'full_name': _fullNameController.text.trim(),
+        },
       );
 
-      await userCredential.user?.updateDisplayName(_fullNameController.text.trim());
-
-      if (!mounted) return;
-
-      Navigator.pop(context); // Pop loading indicator
-
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const MainPage()),
-            (Route<dynamic> route) => false,
-      );
-    } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Pop loading indicator
 
-      String message;
-      if (e.code == 'weak-password') {
-        message = 'The password provided is too weak.';
-      } else if (e.code == 'email-already-in-use') {
-        message = 'The account already exists for that email.';
-      } else if (e.code == 'invalid-email') {
-        message = 'The email address is not valid.';
-      } else {
-        message = 'Sign up failed. Please try again.';
+      if (response.user != null) {
+        // By default, Supabase may require email confirmation.
+        // For development, you can disable this in your Supabase project settings:
+        // Authentication -> Providers -> Email -> Turn off "Confirm email".
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const MainPage()),
+              (Route<dynamic> route) => false,
+        );
       }
+
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Pop loading indicator
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.red),
+        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
       );
+    } catch (e) {
+        if (!mounted) return;
+        Navigator.pop(context); // Pop loading indicator
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("An unexpected error occurred."), backgroundColor: Colors.red),
+        );
     }
   }
 
@@ -157,15 +160,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '(Optional)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -184,11 +178,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                     ),
                     validator: (value) {
-                      if (value != null && value.isNotEmpty) {
-                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                            .hasMatch(value)) {
-                          return 'Please enter a valid email';
-                        }
+                      if (value == null || value.isEmpty) {
+                          return 'Please enter an email';
+                      }
+                      if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                          .hasMatch(value)) {
+                        return 'Please enter a valid email';
                       }
                       return null;
                     },
