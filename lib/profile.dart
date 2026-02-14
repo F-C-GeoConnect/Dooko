@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:untitled1/login.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -8,7 +10,53 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  bool _showAddress = false;
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Get the current user from Supabase
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser != null) {
+      // Populate the text fields with the user's data
+      _nameController.text = currentUser.userMetadata?['full_name'] ?? '';
+      _emailController.text = currentUser.email ?? '';
+      _phoneController.text = currentUser.phone ?? '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _logout() async {
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (e) {
+      // Handle potential errors during logout, though it's rare.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Logout failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+      return;
+    }
+
+    // After successful logout, navigate back to the Login Screen.
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,74 +78,39 @@ class _ProfilePageState extends State<ProfilePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildProfileTextField(
+              controller: _nameController,
               icon: Icons.person_outline,
-              hintText: 'Hari Bahadur',
+              hintText: 'Full Name',
             ),
             const SizedBox(height: 16),
             _buildProfileTextField(
+              controller: _emailController,
               icon: Icons.email_outlined,
               hintText: 'Email address',
+              enabled: false, // Email is usually not editable
             ),
             const SizedBox(height: 16),
             _buildProfileTextField(
+              controller: _phoneController,
               icon: Icons.phone_outlined,
               hintText: 'Phone number',
+              enabled: false, // Phone number from auth is also not editable
             ),
-            const SizedBox(height: 16),
-            _buildProfileTextField(
-              icon: Icons.location_on_outlined,
-              hintText: 'Address',
-            ),
-            const SizedBox(height: 16),
-            _buildProfileTextField(
-              icon: Icons.notes_outlined,
-              hintText: 'Zip code',
-            ),
-            const SizedBox(height: 16),
-            _buildProfileTextField(
-              icon: Icons.map_outlined,
-              hintText: 'City',
-            ),
-            const SizedBox(height: 16),
-            _buildCountryDropdown(),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Show Address',
-                  style: TextStyle(fontSize: 16),
-                ),
-                Switch(
-                  value: _showAddress,
-                  onChanged: (value) {
-                    setState(() {
-                      _showAddress = value;
-                    });
-                  },
-                  activeColor: Colors.green,
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 48),
             SizedBox(
               width: double.infinity,
               height: 50,
-              child: ElevatedButton(
-                onPressed: () {
-                  // Handle add address
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFB2FF59), // Light Green
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.logout, color: Colors.red),
+                onPressed: _logout,
+                label: const Text(
+                  'Logout',
+                  style: TextStyle(fontSize: 16, color: Colors.red),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.red),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Add address',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black54,
                   ),
                 ),
               ),
@@ -108,44 +121,25 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildProfileTextField({required IconData icon, required String hintText}) {
-    return TextField(
+  Widget _buildProfileTextField({
+    required IconData icon,
+    required String hintText,
+    TextEditingController? controller,
+    bool enabled = true,
+  }) {
+    return TextFormField(
+      controller: controller,
+      enabled: enabled,
       decoration: InputDecoration(
         prefixIcon: Icon(icon, color: Colors.grey),
         hintText: hintText,
-        border: InputBorder.none,
-        hintStyle: const TextStyle(color: Colors.grey),
-      ),
-    );
-  }
-
-  Widget _buildCountryDropdown() {
-    return Row(
-      children: [
-        const Icon(Icons.public_outlined, color: Colors.grey),
-        const SizedBox(width: 16),
-        Expanded(
-          child: DropdownButton<String>(
-            value: null, // You can manage state for selected country
-            isExpanded: true,
-            hint: const Text('Country', style: TextStyle(color: Colors.grey)),
-            icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
-            underline: const SizedBox(),
-            items: <String>['USA', 'Canada', 'Nepal', 'India']
-                .map<DropdownMenuItem<String>>((String value) {
-              return DropdownMenuItem<String>(
-                value: value,
-                child: Text(value),
-              );
-            }).toList(),
-            onChanged: (String? newValue) {
-              setState(() {
-                // handle country change
-              });
-            },
-          ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
         ),
-      ],
+        filled: true,
+        fillColor: enabled ? Colors.white : Colors.grey.shade100,
+      ),
     );
   }
 }
