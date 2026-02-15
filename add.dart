@@ -1,9 +1,8 @@
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AddPage extends StatefulWidget {
   const AddPage({super.key});
@@ -31,10 +30,39 @@ class _AddPageState extends State<AddPage> {
     }
   }
 
+  /// A method to determine the current position of the device.
+  Future<Position> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return Future.error('Location services are disabled. Please enable them in your settings.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return Future.error('Location permissions are denied.');
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      return Future.error(
+        'Location permissions are permanently denied, we cannot request permissions.');
+    }
+
+    // Get current position
+    return await Geolocator.getCurrentPosition();
+  }
+
+
   Future<void> _postProduct() async {
     if (!_formKey.currentState!.validate() || _imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields and add an image.')),
+        const SnackBar(
+            content: Text('Please fill all fields and add an image.')),
       );
       return;
     }
@@ -44,27 +72,40 @@ class _AddPageState extends State<AddPage> {
     });
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      // --- Automatically get location before posting ---
+      final Position position = await _determinePosition();
+      // ---
 
-      // Upload image to Firebase Storage
-      final storageRef = FirebaseStorage.instance
-          .ref()
-          .child('product_images')
-          .child('${DateTime.now().toIso8601String()}.jpg');
-      await storageRef.putFile(_imageFile!);
-      final imageUrl = await storageRef.getDownloadURL();
+      final supabase = Supabase.instance.client;
+      final user = supabase.auth.currentUser;
 
-      // Add product to Firestore
-      await FirebaseFirestore.instance.collection('products').add({
+      if (user == null) {
+        throw const AuthException('User not authenticated.');
+      }
+
+      final imageFile = _imageFile!;
+      final String fileName = '${DateTime.now().millisecondsSinceEpoch}.${imageFile.path.split('.').last}';
+
+      await supabase.storage
+          .from('product_images')
+          .upload(fileName, imageFile);
+
+      final imageUrl = supabase.storage
+          .from('product_images')
+          .getPublicUrl(fileName);
+
+      // Format the location data for PostGIS using the fetched position
+      final locationString = 'POINT(${position.longitude} ${position.latitude})';
+
+      await supabase.from('products').insert({
         'productName': _nameController.text,
         'price': double.tryParse(_priceController.text) ?? 0.0,
         'quantity': _quantity,
         'description': _descriptionController.text,
         'imageUrl': imageUrl,
-        'sellerName': user.displayName ?? 'Anonymous Seller',
-        'sellerId': user.uid,
-        'createdAt': Timestamp.now(),
+        'sellerName': user.userMetadata?['full_name'] ?? 'Anonymous Seller',
+        'sellerID': user.id,
+        'location': locationString, // Save the auto-fetched location
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -120,19 +161,19 @@ class _AddPageState extends State<AddPage> {
               _isUploading
                   ? const Center(child: CircularProgressIndicator())
                   : ElevatedButton(
-                onPressed: _postProduct,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text(
-                  'Post Product',
-                  style: TextStyle(color: Colors.black54, fontSize: 16),
-                ),
-              ),
+                      onPressed: _postProduct,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey[200],
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Post Product',
+                        style: TextStyle(color: Colors.black54, fontSize: 16),
+                      ),
+                    ),
             ],
           ),
         ),
